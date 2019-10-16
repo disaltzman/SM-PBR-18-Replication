@@ -1,3 +1,6 @@
+# Analysis code for online replication of SM2018. 
+# It is assumed that the raw data from session 1 and session 2 are in different folders.
+
 rm(list = ls(all = TRUE))
 
 # Load packages.
@@ -17,6 +20,7 @@ library(cowplot)
 library(afex)
 library(lme4)
 library(lmerTest)
+library(quickpsy)
 
 theme_set(theme_bw())
 
@@ -344,7 +348,10 @@ ggplot(PC.both.complete.stats, aes(x=step, y=resp1, colour=factor(bias),linetype
   scale_color_manual('Biasing Condition', labels=c('S-Bias','SH-Bias'),values=c("#B03A2E","#2874A6")) +
   scale_linetype_manual('Order', labels=c('S-SH','SH-S'),values=c("solid","dotted")) +
   coord_cartesian(ylim=c(0,1)) + 
-  theme(text = element_text(size=14))
+  theme(text = element_text(size=14)) +
+  guides(linetype = guide_legend(order=2),
+         color = guide_legend(order=1)) + 
+  ggtitle("Replication Data")
 
 # Prep models.
 PC.both.complete$bias <- as.factor(PC.both.complete$bias)
@@ -379,6 +386,28 @@ m1 <- glmer(resp1 ~ BiasOrderSession + (1|ID),
             data=PC.both.complete, family='binomial', control = glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 200000)))
 posthoc <- multcomp::glht(m1, linfct=multcomp::mcp(BiasOrderSession="Tukey"))
 summary(posthoc,test=multcomp::adjusted("bonferroni")) 
+
+# Figure using block number instead of order.
+PC.both.complete$blocknum <- ifelse(PC.both.complete$order=="SH_S"&PC.both.complete$bias=="S-Bias",2,
+ifelse(PC.both.complete$order=="SH_S"&PC.both.complete$bias=="SH-Bias",1,
+ifelse(PC.both.complete$order=="S_SH"&PC.both.complete$bias=="S-Bias",1,
+ifelse(PC.both.complete$order=="S_SH"&PC.both.complete$bias=="SH-Bias",2,""))))
+
+# Figure using block number.
+PC.both.complete.stats <- Rmisc::summarySE(data = PC.both.complete, measurevar="resp1",groupvars = c("step","bias","blocknum","session"))
+
+# Plot.
+ggplot(PC.both.complete.stats, aes(x=step, y=resp1, colour=factor(bias),linetype=factor(blocknum))) +
+  geom_point(stat='summary', fun.y='mean', size=2.5) +
+  geom_line(stat='summary', fun.y='mean', size=0.75) +
+  geom_errorbar(aes(ymin=resp1-se,ymax=resp1+se),width=.5) +
+  facet_wrap(~session) +
+  scale_x_continuous('Continuum step', breaks=c(1:7)) +
+  scale_y_continuous('Percent "sign" responses', breaks=c(0,0.25,0.5,0.75,1), labels=c(0,25,50,75,100)) +
+  scale_color_manual('Biasing Condition', labels=c('S-Bias','SH-Bias'),values=c("#B03A2E","#2874A6")) +
+  scale_linetype_manual('Block Number', labels=c('1','2'),values=c("solid","dotted")) +
+  coord_cartesian(ylim=c(0,1)) + 
+  theme(text = element_text(size=14))
 
 #### SH-S Order only ####
 
@@ -433,3 +462,23 @@ geom_point(stat='summary', fun.y='mean', size=2.5) +
   coord_cartesian(ylim=c(0,1)) +
   theme(text = element_text(size=20))+
   ggtitle("SH-S Order only")
+
+#### Within-subject stability ####
+
+# Fit psychometric functions to the PC data.
+session.subject.curves <- quickpsy(PC.both.complete, step, resp1, 
+                                   grouping = .(ID,session,bias), 
+                                   fun = logistic_fun,
+                                   lapses = FALSE, 
+                                   guess = FALSE,
+                                   bootstrap = "nonparametric", 
+                                   optimization = "optim",
+                                   B = 500)
+
+# Organize and clean up quickpsy output.
+boundaries <- as.data.frame(session.subject.curves$par)
+boundaries[5:6] <- list(NULL)
+boundaries <- boundaries %>% spread(parn, par, drop=TRUE)
+colnames(boundaries)[3] <- "Boundary"
+colnames(boundaries)[4] <- "Slope"
+save(boundaries,file="boundaries.Rda")
