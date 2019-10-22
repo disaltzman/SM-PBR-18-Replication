@@ -433,3 +433,45 @@ geom_point(stat='summary', fun.y='mean', size=2.5) +
   coord_cartesian(ylim=c(0,1)) +
   theme(text = element_text(size=20))+
   ggtitle("SH-S Order only")
+
+#### Within-subject stability ####
+
+# Fit psychometric functions to the PC data.
+session.subject.curves <- quickpsy(PC.both.complete, step, resp1, 
+                                   grouping = .(ID,session,bias), 
+                                   fun = logistic_fun,
+                                   lapses = FALSE, 
+                                   guess = FALSE,
+                                   bootstrap = "nonparametric", 
+                                   optimization = "optim",
+                                   B = 500)
+
+# Organize and clean up quickpsy output.
+boundaries <- as.data.frame(session.subject.curves$par)
+boundaries[6:7] <- list(NULL)
+boundaries <- boundaries %>% spread(parn, par, drop=TRUE)
+colnames(boundaries)[4] <- "Boundary"
+boundaries[5] <- NULL
+
+# Add in 'order' and save.
+boundaries$order <- with(PC.both.complete,order[match(boundaries$ID,ID)])
+save(boundaries,file="boundaries.Rda")
+
+# Create measure of shift by subtracting SH-bias boundary from S-bias boundary.
+boundaries <- boundaries %>% spread(bias, Boundary, drop=TRUE)
+boundaries$shift <- boundaries$`S-Bias`-boundaries$`SH-Bias`
+
+# Filter only learning order (SH-S).
+learn.corr <- filter(boundaries,order=="SH_S")
+learn.corr <- unstack(learn.corr,shift~session)
+cor.test(learn.corr$Session.1,learn.corr$Session.2)
+
+# Filter only non-learning order (S-SH).
+nonlearn.corr <- filter(boundaries,order=="S_SH")
+nonlearn.corr <- unstack(nonlearn.corr,shift~session)
+cor.test(nonlearn.corr$Session.1,nonlearn.corr$Session.2)
+
+# Correlation across orders.
+group.corr <- unstack(boundaries,shift~session)
+cor.test(group.corr$Session.1,group.corr$Session.2)
+
