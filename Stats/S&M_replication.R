@@ -331,8 +331,6 @@ PC.session2$ID <- as.factor(PC.session2$ID)
 PC.session2$bias <- as.factor(PC.session2$bias)
 PC.session2$step <- scale(PC.session2$step)
 PC.session2$order <- as.factor(PC.session2$order)
-contrasts(PC.session2$bias) = contr.sum(2)
-contrasts(PC.session2$order) = contr.sum(2)
 
 # Build models.
 model1 <- mixed(resp1 ~ step*bias*order +
@@ -446,13 +444,13 @@ model1
 summary(model1)
 
 # Explore interactions
-# First, simple effects to see which orders/sessions bias effect is significant at.
-biasXorderXsession <- emmeans(model1, ~bias*order*session,interaction="pairwise")
-pairs(biasXorderXsession,simple="bias")
+# First, simple effects to see which order bias effect is significant at.
+biasXorder <- emmeans(model1, ~bias*order,interaction="pairwise")
+pairs(biasXorder,simple="bias")
 
 # Is there anything to trend that bias by order interaction is weaker in session 2?
-foo <- emmeans(model1,~bias|session*order)
-con1 <- contrast(foo, interaction = "pairwise")
+biasordersession <- emmeans(model1,~bias|session*order)
+con1 <- contrast(biasordersession, interaction = "pairwise")
 pairs(con1, by = NULL)
 
 followup <- mixed(resp1 ~ step + (session/bias*order) + 
@@ -519,7 +517,6 @@ cor.test(group.corr$Session.1,group.corr$Session.2)
 #### Acoustic data ####
 
 # Load data
-setwd("../Stats")
 acoustics <- read.csv("../Sounds/Acoustic Data/Drouin-ET-AL-2016-Acoustic-Measurements.csv",header=TRUE)
 acoustics <- subset(acoustics,Block=="Exposure")
 
@@ -573,7 +570,7 @@ globalstatistics <- ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=
 fig1<-plot_grid(localstatistics1,localstatistics2,globalstatistics,ncol=1,rel_heights = c(1,1.2,1)) +
   draw_text("Order SH-S",hjust = -0.5, vjust = -31.5) + draw_text("Order S-SH",hjust = 3.5, vjust = -31.5)
 
-ggsave("../Manuscript/fig1.png",device="png",dpi="retina",type="cairo",height = 10,width = 8)
+ggsave("../Figures/fig1.png",device="png",dpi="retina",type="cairo",height = 10,width = 8)
 
 # Fig 4
 ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Type)) + 
@@ -582,8 +579,8 @@ ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Typ
   scale_fill_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) +
   scale_linetype_manual('Type',labels=c("Modified","Natural"),values=c("dashed","solid")) + 
   xlab("Spectral center (Hz)") +
-  geom_vline(data=acoustics %>% group_by(Bias,Type) %>% summarize(avg=mean(Center.Gravity.Hz)),aes(xintercept=avg)) + 
+  geom_vline(data=acoustics %>% group_by(Phoneme,Type) %>% summarize(avg=mean(Center.Gravity.Hz)),aes(xintercept=avg,color=Phoneme),linetype="dotted",size=1.25) + 
   theme(text = element_text(size=14),axis.text.y = element_blank(),
         axis.title.y = element_blank(),axis.ticks.y = element_blank())
 
-ggsave("../Manuscript/fig4.png",device="png",dpi="retina",type="cairo")
+ggsave("../Figures/fig4.png",device="png",dpi="retina",type="cairo",width=8,height=4,units="in")
