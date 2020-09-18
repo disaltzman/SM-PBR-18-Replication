@@ -3,7 +3,6 @@ rm(list = ls(all = TRUE))
 # Load packages.
 # Data manipulation.
 library(data.table)
-library(dplyr)
 library(stringr)
 library(rio)
 library(tidyverse)
@@ -22,7 +21,7 @@ library(quickpsy)
 
 theme_set(theme_bw())
 
-#### Import Data ####
+#### Import Data and Clean ####
 
 # Session 1
 # Set working directory.
@@ -203,6 +202,8 @@ PC.both.complete %>%
   group_by(order) %>%
   summarise(Count = n_distinct(ID)) # S_SH n=32, SH_S n=31
 
+#### Calculate time between sessions ####
+
 # Calculate statistics about length between session 1 and 2.
 library(lubridate)
 
@@ -368,7 +369,7 @@ PC.both.complete$step <- ifelse(PC.both.complete$stimulus=="TW001_20SS_80SH-001.
 PC.both.complete.stats <- Rmisc::summarySE(data = PC.both.complete, measurevar="resp1",groupvars = c("step","bias","order","session"))
 
 # Plot.
-ggplot(PC.both.complete.stats, aes(x=step, y=resp1, colour=factor(bias),linetype=factor(order))) +
+pc.cat<-ggplot(PC.both.complete.stats, aes(x=step, y=resp1, colour=factor(bias),linetype=factor(order))) +
   geom_point(stat='summary', fun.y='mean', size=2.5) +
   geom_line(stat='summary', fun.y='mean', size=0.75) +
   geom_errorbar(aes(ymin=resp1-se,ymax=resp1+se),width=.5) +
@@ -376,10 +377,28 @@ ggplot(PC.both.complete.stats, aes(x=step, y=resp1, colour=factor(bias),linetype
   scale_x_continuous('Continuum step', breaks=c(1:7)) +
   scale_y_continuous('Percent "sign" responses', breaks=c(0,0.25,0.5,0.75,1), labels=c(0,25,50,75,100)) +
   scale_color_manual('Biasing Condition', labels=c('S-Bias','SH-Bias'),values=c("#B03A2E","#2874A6")) +
-  scale_linetype_manual('Order', labels=c('S-SH','SH-S'),values=c("solid","dotted")) +
+  scale_linetype_manual('Order', labels=c('S-SH','SH-S'),values=c("solid","dashed")) +
   coord_cartesian(ylim=c(0,1)) + 
-  theme(text = element_text(size=14))
-ggsave("replication_PC.png",device="png",dpi="retina",type="cairo")
+  theme(text = element_text(size=14),legend.position = "bottom")
+
+# ggplot(PC.both.complete.stats, aes(x=bias, y=resp1, fill=bias,alpha=order)) +
+#   geom_bar(aes(fill=bias,alpha=order),stat="summary",position=position_dodge(width=1)) + 
+#   scale_fill_manual('Biasing Condition', labels=c('S-Bias','SH-Bias'),values=c("#B03A2E","#2874A6")) +
+#   scale_alpha_manual('Order', labels=c('S-SH',"SH-S"),values=c(1,0.5)) +
+#   facet_wrap(~session)
+
+PC.both.complete.stats <- Rmisc::summarySE(data = PC.both.complete, measurevar="resp1",groupvars = c("bias","order","session"))
+
+pc.bar<-ggplot(PC.both.complete.stats, aes(x=bias, y=resp1, color=bias,linetype=order)) +
+  geom_bar(aes(color=bias,linetype=order),alpha=0,stat="summary",position=position_dodge(width=1),size=1.1) + 
+  scale_color_manual('Biasing Condition', labels=c('S-Bias','SH-Bias'),values=c("#B03A2E","#2874A6")) +
+  geom_errorbar(aes(ymin=resp1-se,ymax=resp1+se),width=.5, position=position_dodge(width=1)) +
+  scale_linetype_manual('Order', labels=c('S-SH',"SH-S"),values=c("solid","dashed")) +
+  scale_y_continuous('Total percent "sign" responses', breaks=c(0,0.2,0.4,0.6,0.8), labels=c(0,20,40,60,80)) +
+  facet_wrap(~session) + theme(text=element_text(size=14),legend.position = "NONE",axis.title.x = element_blank())
+
+plot_grid(pc.cat,pc.bar,ncol=1,labels="AUTO")
+ggsave("../../Figures/replication_PC.png",device="png",dpi="retina",type="cairo",height=10,width=8)
 
 # Calculate stats for subject plot.
 PC.both.complete.stats.subj <- Rmisc::summarySE(data = PC.both.complete, measurevar="resp1",groupvars = c("ID","step","bias","session"))
@@ -458,6 +477,136 @@ followup <- mixed(resp1 ~ step + (session/bias*order) +
                   control = glmerControl(optimizer="bobyqa",calc.derivs = FALSE, optCtrl = list(maxfun = 1500000)))
 summary(followup)
 
+#### Lexical Decision ####
+
+# Combine data frames
+LD.both.complete <- rbind(LD.session1,LD.session2)
+
+# Subset just to responses
+LD.both.complete <- subset(LD.both.complete,zone_type=="response_keyboard_single")
+
+# Subset just to participants in PC analysis
+LD.both.complete <- LD.both.complete[LD.both.complete$ID %in% PC.both.complete$ID, ]
+
+# Add word type variable
+LD.both.complete$type <- ifelse(grepl("NW",LD.both.complete$stimulus),"Non-word Filler",ifelse(grepl("FW",LD.both.complete$stimulus),"Word Filler",
+                                ifelse(grepl("_CLR_",LD.both.complete$stimulus),"Clear Word",ifelse(grepl("_AMB_",LD.both.complete$stimulus),"Ambiguous Word",""))))
+
+
+# Summarize
+LD.stats <- Rmisc::summarySE(LD.both.complete,measurevar = "correct",groupvars = c("block","order","type","session"))
+LD.stats <- subset(LD.stats,type=="Ambiguous Word"|type=="Clear Word")
+
+ggplot(LD.stats,aes(x=type,y=correct,color=block,linetype=order)) + 
+  geom_bar(aes(color=block,linetype=order),stat="identity",alpha=0,position=position_dodge(width=1)) +
+  geom_errorbar(aes(ymin=correct-se,ymax=correct+se),position=position_dodge(width=1)) +
+  scale_color_manual("Block",values=c("#B03A2E","#2874A6")) +
+  scale_linetype_manual("Order",values=c("solid","dashed")) +
+  facet_wrap(~session) +
+  coord_cartesian(ylim=c(0.6,1)) +
+  xlab("Word type") + ylab("Proportion correct") + 
+  theme(text = element_text(size=18))
+
+# For analysis, subset to just clear and ambiguous words
+LD.both.complete <- subset(LD.both.complete,type=="Ambiguous Word"|type=="Clear Word")
+
+# Set to factors
+LD.both.complete$session <- as.factor(LD.both.complete$session)
+LD.both.complete$block <- as.factor(LD.both.complete$block)
+LD.both.complete$type <- as.factor(LD.both.complete$type)
+LD.both.complete$ID <- as.factor(LD.both.complete$ID)
+LD.both.complete$order <- as.factor(LD.both.complete$order)
+
+# Mixed-effects models
+model1 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (type||ID) + (block||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000))) 
+
+model2 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (type||ID) + (block||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model3 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (type||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model4 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (block||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model5 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (type||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model6 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (block||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model7 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model8 <- mixed(correct ~ type*block*order*session + 
+                  (type:block:session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model9 <- mixed(correct ~ type*block*order*session + 
+                  (type||ID) + (block||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model10 <- mixed(correct ~ type*block*order*session + 
+                  (type||ID) + (block||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model11 <- mixed(correct ~ type*block*order*session + 
+                  (type||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model12 <- mixed(correct ~ type*block*order*session + 
+                  (block||ID) + (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model13 <- mixed(correct ~ type*block*order*session + 
+                  (type||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model14 <- mixed(correct ~ type*block*order*session + 
+                  (block||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model15 <- mixed(correct ~ type*block*order*session + 
+                  (session||ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE, optCtrl = list(maxfun = 20000)))
+
+model16 <- mixed(correct ~ type*block*order*session + 
+                  (1|ID), family=binomial(link="logit"),
+                data=LD.both.complete,method="LRT",expand_re = TRUE,
+                control = glmerControl(optimizer="nloptwrap",calc.derivs = FALSE))
+
+# Compare
+anova(model1,model2,model3,model4,model5,model6,model7,model8,model9,model10,model11,model12,model13,model14,model15,model16)
+model2
+# Post hoc
+pairs(emmeans(model2, ~block*order,interaction="pairwise"))
+pairs(emmeans(model2, ~block*type,interaction="pairwise"))
+pairs(emmeans(model2, ~block*session,interaction="pairwise"))
+
+
 #### Within-subject stability ####
 # Fit psychometric functions to the PC data.
 session.subject.curves <- quickpsy(PC.both.complete, step, resp1, 
@@ -481,6 +630,8 @@ boundaries[5] <- NULL
 # Add in 'order' and save.
 boundaries$order <- with(PC.both.complete,order[match(boundaries$ID,ID)])
 save(boundaries,file="boundaries.Rda")
+
+# Run only this code after crearting boundaries Rdata file
 load("boundaries.Rda")
 
 # Plot boundary changes
@@ -495,7 +646,7 @@ boundaries$shift <- boundaries$`S-Bias`-boundaries$`SH-Bias`
 
 # Scatter plot of shift by subject
 ggplot(unstack(boundaries,shift~session),aes(x=Session.1,y=Session.2)) + 
-  geom_point(size=2) + geom_smooth(method=lm) + stat_cor() +
+  geom_point(size=2) + geom_smooth(method=lm) + ggpubr::stat_cor() +
   xlab("Session 1 shift size") + ylab("Session 2 shift size") + 
   theme(text = element_text(size=14))
 ggsave("shift_scatter.png",device="png",dpi="retina",type="cairo")
@@ -521,32 +672,87 @@ acoustics <- read.csv("../Sounds/Acoustic Data/Drouin-ET-AL-2016-Acoustic-Measur
 acoustics <- subset(acoustics,Block=="Exposure")
 
 # Create dataframe with theoretical boundary values for vertical lines in figures
-vlines <- data.frame(bound=c(3750,5100),Bias=c("s-bias","sh-bias"))
+acoustics$BiasWithOrder <- ifelse(acoustics$Bias=="s-bias","S-SH Order \n s-bias","SH-S Order \n sh-bias")
+acoustics$Boundary <- ifelse(acoustics$BiasWithOrder=="S-SH Order \n s-bias",3750,5100)
 
 localstatistics1 <- ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Type)) + 
   geom_density(aes(color=Phoneme,fill=Phoneme,linetype=Type),size=1.1,alpha=0.2) + 
-  geom_vline(data=vlines,aes(xintercept=bound),linetype="dashed") +
-  facet_wrap(~Bias) + 
+  geom_vline(aes(xintercept=Boundary),linetype="dashed") +
+  facet_wrap(~BiasWithOrder) + 
   scale_color_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
   scale_fill_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) +
   scale_linetype_manual('Type',labels=c("Modified","Natural"),values=c("dashed","solid")) + 
-  theme(text = element_text(size=14),axis.text.y = element_blank(),
+  theme_half_open(14) + 
+  theme(axis.text.y = element_blank(),
         axis.title.y = element_blank(),axis.ticks.y = element_blank(),
         legend.position="none",axis.title.x = element_blank(),plot.title = element_text(hjust = 0.5)) +
-  ggtitle("Block 1: Recent Statistics")
+  ggtitle("Block 1: Recent & Global statistics both predict boundary \n shift after first block of biasing information")
 
+# Create hypothetical categorization data to inset
+hypo <- data.frame("step"=c(rep(1:7,2)),"resp"=c(0,0,0.5,1,1,1,1,0,0,0,0,0.5,1,1),"bias"=c(rep("s-bias",7),rep("sh-bias",7)))
+
+# Create catetegorization functions to inset into plot
+inset1 <- ggplot(subset(hypo,bias=="s-bias"),aes(x=step,y=resp,group=bias)) + geom_line(color="#B03A2E")  +
+  geom_point(color="#B03A2E") + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuum step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+inset2 <- ggplot(subset(hypo,bias=="sh-bias"),aes(x=step,y=resp,group=bias)) + geom_line(color="#2874A6")  +
+  geom_point(color="#2874A6") + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuuma step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+# Superimpose
+localstatistics1.final <- ggdraw(localstatistics1) + draw_plot(inset1,.25, .35, .25, .35) + draw_plot(inset2,.74,.35,.25,.35)
+localstatistics1.final
+
+# Block 2 local statistics 
 localstatistics2 <- ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Type)) + 
   geom_density(aes(color=Phoneme,fill=Phoneme,linetype=Type),size=1.1,alpha=0.2) + 
-  geom_vline(data=vlines,aes(xintercept=bound),linetype="dashed") +
+  geom_vline(aes(xintercept=Boundary),linetype="dashed") +
   facet_wrap(~factor(Bias,levels=c("sh-bias","s-bias"))) + 
   scale_color_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
   scale_fill_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) +
   scale_linetype_manual('Type',labels=c("Modified","Natural"),values=c("dashed","solid")) + 
+  theme_half_open(14) + 
   theme(text = element_text(size=14),axis.text.y = element_blank(),
         axis.title.y = element_blank(),axis.ticks.y = element_blank(),
         legend.position = "bottom", legend.margin=margin(0,0,0,0),
         legend.box.margin=margin(10,10,10,10),axis.title.x = element_blank(),plot.title = element_text(hjust = 0.5)) +
-  ggtitle("Block 2: Recent Statistics")
+  ggtitle("Block 2: Recent statistics predicts boundary shift \n after second block of biasing information")
+
+# Create catetegorization functions to inset into plot
+inset3 <- ggplot(hypo,aes(x=step,y=resp,color=bias)) + geom_line(aes(color=bias,alpha=bias))  +
+  geom_point(aes(color=bias,alpha=bias)) + 
+  scale_alpha_manual('Bias',values=c(0.4,1)) + 
+  scale_color_manual('Bias', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuum step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "NONE")
+
+inset4 <- ggplot(hypo,aes(x=step,y=resp,color=bias)) + geom_line(aes(color=bias,alpha=factor(bias,levels=c("sh-bias","s-bias"))))  +
+  geom_point(aes(color=bias,alpha=bias)) + 
+  scale_alpha_manual('Bias',values=c(0.4,1)) + 
+  scale_color_manual('Bias', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuum step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "NONE")
+
+# Superimpose
+localstatistics2.final <- ggdraw(localstatistics2) + draw_plot(inset3,.25, .45, .25, .35) + draw_plot(inset4,.74,.45,.25,.35)
+localstatistics2.final
 
 # For plotting purposes, duplicate data and create dummy plotting variable to facet global statistics figure
 acoustics <- rbind(acoustics,acoustics)
@@ -560,17 +766,49 @@ globalstatistics <- ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=
   scale_color_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
   scale_fill_manual('Phoneme', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) +
   xlab("Spectral center (Hz)") +
-  theme(text = element_text(size=14),axis.text.y = element_blank(),
+  theme_half_open(14) + 
+  theme(axis.text.y = element_blank(),
         axis.title.y = element_blank(),axis.ticks.y = element_blank(),legend.position = "NONE",
         plot.title = element_text(hjust = 0.5),strip.background = element_blank(),
         strip.text.x = element_blank()) +
-  ggtitle("Block 2: Global Statistics")
+  ggtitle("Block 2: Global statistics predicts no boundary shift \n after second block of biasing information")
+
+# Create hypothetical data for global statistics hypothesis
+hypo2 <- data.frame("step"=c(rep(1:7,2)),"resp"=c(0,0,0.5,1,1,1,1,0,0,0,.5,1,1,1),"bias"=c(rep("s-bias",7),rep("sh-bias",7)))
+hypo3 <- data.frame("step"=c(rep(1:7,2)),"resp"=c(0,0,0,.5,1,1,1,0,0,0,0,.5,1,1),"bias"=c(rep("s-bias",7),rep("sh-bias",7)))
+
+# Create catetegorization functions to inset into plot
+inset5 <- ggplot(hypo2,aes(x=step,y=resp,color=bias)) + geom_line(aes(color=bias,alpha=bias))  +
+  geom_point(aes(color=bias,alpha=bias)) + 
+  scale_color_manual('Bias', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) +
+  scale_alpha_manual('Bias',values=c(0.4,1)) + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuum step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "NONE")
+
+inset6 <- ggplot(hypo3,aes(x=step,y=resp,color=bias)) + geom_line(aes(color=bias,alpha=bias))  +
+  geom_point(aes(color=bias,alpha=bias)) + 
+  scale_color_manual('Bias', labels=c('s','sh'),values=c("#B03A2E","#2874A6")) + 
+  scale_alpha_manual('Bias',values=c(1,0.4)) + 
+  theme_half_open(14) + ylab("% 'Sign'") + xlab("Continuum step") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "NONE")
+
+# Superimpose
+globalstatistics.final <- ggdraw(globalstatistics) + draw_plot(inset5,.23, .45, .24, .4) + draw_plot(inset6,.73,.45,.22,.4)
+globalstatistics.final
 
 # Visualize 
-fig1<-plot_grid(localstatistics1,localstatistics2,globalstatistics,ncol=1,rel_heights = c(1,1.2,1)) +
-  draw_text("Order SH-S",hjust = -0.5, vjust = -31.5) + draw_text("Order S-SH",hjust = 3.5, vjust = -31.5)
+fig1<-plot_grid(localstatistics1.final,localstatistics2.final,globalstatistics.final,ncol=1,rel_heights = c(1,1.2,1),labels="AUTO")
+fig1
 
-ggsave("../Figures/fig1.png",device="png",dpi="retina",type="cairo",height = 10,width = 8)
+ggsave("../Figures/fig1.png",device="png",dpi="retina",type="cairo",height = 11,width = 8)
 
 # Fig 4
 ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Type)) + 
