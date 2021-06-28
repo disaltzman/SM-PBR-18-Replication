@@ -601,11 +601,11 @@ model16 <- mixed(correct ~ type*block*order*session +
 # Compare
 anova(model1,model2,model3,model4,model5,model6,model7,model8,model9,model10,model11,model12,model13,model14,model15,model16)
 model2
+
 # Post hoc
 pairs(emmeans(model2, ~block*order,interaction="pairwise"))
 pairs(emmeans(model2, ~block*type,interaction="pairwise"))
 pairs(emmeans(model2, ~block*session,interaction="pairwise"))
-
 
 #### Within-subject stability ####
 # Fit psychometric functions to the PC data.
@@ -822,3 +822,56 @@ ggplot(acoustics,aes(x=Center.Gravity.Hz,fill=Phoneme,color=Phoneme,linetype=Typ
         axis.title.y = element_blank(),axis.ticks.y = element_blank())
 
 ggsave("../Figures/fig4.png",device="png",dpi="retina",type="cairo",width=8,height=4,units="in")
+
+
+#### Reliability analysis for Whoosh ####
+
+# Subset to session 1 PC data 
+whooshdata <- subset(PC.both.complete,session=="Session 1")
+
+# even/odd trial groups----
+# for each participant and continuum point, I assign a trial number 
+# (order of presentation of that continuum point in the experiment), 
+# and then assign a group of even or odd trial numbers
+
+whoosh_sbias <- whooshdata %>%
+  filter(bias=="S-Bias") %>% 
+  group_by(ID, step) %>%
+  mutate(new_trial_number = row_number()) %>%
+  mutate(Group = ifelse(new_trial_number %% 2 == 0, "even", "odd"))
+
+whoosh_shbias <- whooshdata %>%
+  filter(bias=="SH-Bias") %>% 
+  group_by(ID, step) %>%
+  mutate(new_trial_number = row_number()) %>%
+  mutate(Group = ifelse(new_trial_number %% 2 == 0, "even", "odd"))
+
+logistic_model <- function(x){
+  model <- nlme::nlme(resp1 ~ 7/(1+exp(-scal*(step-xmid))),
+                data = x,
+                fixed = xmid + scal ~ 1,
+                random = xmid + scal ~ 1|ID,
+                start = c(xmid = 3.4, scal = .7))
+  coef(model)
+}
+
+# split by even/odd trials and fit model, extract random effect coefficients
+coefs_sbias <- whoosh_sbias %>%
+  split(.$Group) %>%
+  map(logistic_model)
+
+coefs_shbias <- whoosh_shbias %>%
+  split(.$Group) %>%
+  map(logistic_model)
+
+# correlation tests for slopes to see if participants' slopes are consistent within
+# a continuum for odd/even trials
+cor.test(coefs_sbias[[1]]$scal, coefs_sbias[[2]]$scal) # s-bias within-participant consistency
+cor.test(coefs_shbias[[1]]$scal, coefs_shbias[[2]]$scal) # sh-bias within-participant consistency
+
+# correlation tests for slopes to see if participants' slopes are correlated
+# with their slopes from the other biasing condition (all combinations of even/odd trials)
+cor.test(coefs_sbias[[1]]$scal, coefs_shbias[[1]]$scal) # s-bias even/sh-bias even
+cor.test(coefs_sbias[[2]]$scal, coefs_shbias[[2]]$scal) # s-bias odd/sh-bias odd
+cor.test(coefs_sbias[[1]]$scal, coefs_shbias[[2]]$scal) # s-bias even/sh-bias odd 
+cor.test(coefs_sbias[[2]]$scal, coefs_shbias[[1]]$scal) # s-bias odd/sh-bias even
